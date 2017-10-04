@@ -110,10 +110,10 @@
 #define E0_ENABLE_PIN      24
 #define E0_CS_PIN          42
 
-#define E1_STEP_PIN        36
-#define E1_DIR_PIN         34
-#define E1_ENABLE_PIN      30
-#define E1_CS_PIN          44
+//#define E1_STEP_PIN        36
+//#define E1_DIR_PIN         34
+//#define E1_ENABLE_PIN      30
+//#define E1_CS_PIN          44
 
 //
 // Temperature Sensors
@@ -161,6 +161,7 @@
 #ifndef RAMPS_D10_PIN
   #define RAMPS_D10_PIN 10
 #endif
+  #define RAMPS_D44_PIN 44
 
 #define HEATER_0_PIN     RAMPS_D10_PIN
 
@@ -189,7 +190,7 @@
 #endif
 
 #ifndef FAN_PIN
-  #define FAN_PIN 4      // IO pin. Buffer needed
+  #define FAN_PIN -1      // IO pin. Buffer needed
 #endif
 
 //
