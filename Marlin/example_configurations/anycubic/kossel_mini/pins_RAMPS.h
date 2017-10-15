@@ -273,6 +273,8 @@
 
   #else
 
+    #if ENABLED(CR10_STOCKDISPLAY)
+
       #define LCD_PINS_RS       27
       #define LCD_PINS_ENABLE   29
       #define LCD_PINS_D4       25
