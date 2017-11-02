@@ -90,6 +90,8 @@
   #include "pins_MKS_BASE.h"          // ATmega1280, ATmega2560
 #elif MB(MKS_13)
   #include "pins_MKS_13.h"            // ATmega1280, ATmega2560
+#elif MB(MKS_GEN_L)
+  #include "pins_MKS_GEN_L.h"         // ATmega1280, ATmega2560
 #elif MB(ZRIB_V20)
   #include "pins_ZRIB_V20.h"          // ATmega1280, ATmega2560 (MKS_13)
 #elif MB(FELIX2)
@@ -114,6 +116,8 @@
   #include "pins_RUMBA.h"             // ATmega2560
 #elif MB(BQ_ZUM_MEGA_3D)
   #include "pins_BQ_ZUM_MEGA_3D.h"    // ATmega2560
+#elif MB(MAKEBOARD_MINI)
+  #include "pins_MAKEBOARD_MINI.h"    // ATmega2560
 
 //
 // Other ATmega1280, ATmega2560
@@ -154,6 +158,8 @@
   #include "pins_GT2560_REV_A.h"      // ATmega1280, ATmega2560
 #elif MB(GT2560_REV_A_PLUS)
   #include "pins_GT2560_REV_A_PLUS.h" // ATmega1280, ATmega2560
+#elif MB(SILVER_GATE)
+  #include "pins_SILVER_GATE.h"       // ATmega2561
 
 //
 // ATmega1281, ATmega2561

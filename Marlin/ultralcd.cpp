@@ -77,11 +77,16 @@ int16_t lcd_preheat_hotend_temp[2], lcd_preheat_bed_temp[2], lcd_preheat_fan_spe
   #endif
 #endif
 
-uint8_t lcd_status_message_level;
+uint8_t lcd_status_update_delay = 1, // First update one loop delayed
+        lcd_status_message_level;    // Higher level blocks lower level
 char lcd_status_message[3 * (LCD_WIDTH) + 1] = WELCOME_MSG; // worst case is kana with up to 3*LCD_WIDTH+1
 
 #if ENABLED(STATUS_MESSAGE_SCROLLING)
   uint8_t status_scroll_pos = 0;
+#endif
+
+#if ENABLED(SCROLL_LONG_FILENAMES)
+  uint8_t filename_scroll_pos, filename_scroll_max, filename_scroll_hash;
 #endif
 
 #if ENABLED(DOGLCD)
@@ -1241,6 +1246,15 @@ void kill_screen(const char* lcd_msg) {
 
   #endif // ADVANCED_PAUSE_FEATURE
 
+  // First Fan Speed title in "Tune" and "Control>Temperature" menus
+  #if FAN_COUNT > 0 && HAS_FAN0
+    #if FAN_COUNT > 1
+      #define FAN_SPEED_1_SUFFIX " 1"
+    #else
+      #define FAN_SPEED_1_SUFFIX ""
+    #endif
+  #endif
+
   /**
    *
    * "Tune" submenu
@@ -1296,18 +1310,22 @@ void kill_screen(const char* lcd_msg) {
     //
     #if FAN_COUNT > 0
       #if HAS_FAN0
-        #if FAN_COUNT > 1
-          #define MSG_1ST_FAN_SPEED MSG_FAN_SPEED " 1"
-        #else
-          #define MSG_1ST_FAN_SPEED MSG_FAN_SPEED
-        #endif
-        MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_1ST_FAN_SPEED, &fanSpeeds[0], 0, 255);
+        MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_FAN_SPEED FAN_SPEED_1_SUFFIX, &fanSpeeds[0], 0, 255);
+       #if ENABLED(EXTRA_FAN_SPEED)
+          MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_EXTRA_FAN_SPEED FAN_SPEED_1_SUFFIX, &new_fanSpeeds[0], 3, 255);
+       #endif
       #endif
       #if HAS_FAN1
         MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_FAN_SPEED " 2", &fanSpeeds[1], 0, 255);
+        #if ENABLED(EXTRA_FAN_SPEED)
+          MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_EXTRA_FAN_SPEED " 2", &new_fanSpeeds[1], 3, 255);
+        #endif
       #endif
       #if HAS_FAN2
         MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_FAN_SPEED " 3", &fanSpeeds[2], 0, 255);
+        #if ENABLED(EXTRA_FAN_SPEED)
+          MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_EXTRA_FAN_SPEED " 3", &new_fanSpeeds[2], 3, 255);
+        #endif
       #endif
     #endif // FAN_COUNT > 0
 
@@ -2739,9 +2757,9 @@ void kill_screen(const char* lcd_msg) {
       MENU_ITEM_EDIT(float52, MSG_DELTA_DIAG_ROG, &delta_diagonal_rod, DELTA_DIAGONAL_ROD - 5.0, DELTA_DIAGONAL_ROD + 5.0);
       _delta_height = DELTA_HEIGHT + home_offset[Z_AXIS];
       MENU_MULTIPLIER_ITEM_EDIT_CALLBACK(float52, MSG_DELTA_HEIGHT, &_delta_height, _delta_height - 10.0, _delta_height + 10.0, _lcd_set_delta_height);
-      MENU_ITEM_EDIT(float43, "Ex", &endstop_adj[A_AXIS], -5.0, 5.0);
-      MENU_ITEM_EDIT(float43, "Ey", &endstop_adj[B_AXIS], -5.0, 5.0);
-      MENU_ITEM_EDIT(float43, "Ez", &endstop_adj[C_AXIS], -5.0, 5.0);
+      MENU_ITEM_EDIT(float43, "Ex", &delta_endstop_adj[A_AXIS], -5.0, 5.0);
+      MENU_ITEM_EDIT(float43, "Ey", &delta_endstop_adj[B_AXIS], -5.0, 5.0);
+      MENU_ITEM_EDIT(float43, "Ez", &delta_endstop_adj[C_AXIS], -5.0, 5.0);
       MENU_ITEM_EDIT(float52, MSG_DELTA_RADIUS, &delta_radius, DELTA_RADIUS - 5.0, DELTA_RADIUS + 5.0);
       MENU_ITEM_EDIT(float43, "Tx", &delta_tower_angle_trim[A_AXIS], -5.0, 5.0);
       MENU_ITEM_EDIT(float43, "Ty", &delta_tower_angle_trim[B_AXIS], -5.0, 5.0);
@@ -2776,7 +2794,7 @@ void kill_screen(const char* lcd_msg) {
   #if IS_KINEMATIC
     extern float feedrate_mm_s;
     extern float destination[XYZE];
-    void set_destination_to_current();
+    void set_destination_from_current();
     void prepare_move_to_destination();
   #endif
 
@@ -2801,7 +2819,7 @@ void kill_screen(const char* lcd_msg) {
         #endif
 
         // Set movement on a single axis
-        set_destination_to_current();
+        set_destination_from_current();
         destination[manual_move_axis] += manual_move_offset;
 
         // Reset for the next move
@@ -2813,7 +2831,7 @@ void kill_screen(const char* lcd_msg) {
         // previous invocation is being blocked. Modifications to manual_move_offset shouldn't be made while
         // processing_manual_move is true or the planner will get out of sync.
         processing_manual_move = true;
-        prepare_move_to_destination(); // will call set_current_to_destination
+        prepare_move_to_destination(); // will call set_current_from_destination()
         processing_manual_move = false;
 
         feedrate_mm_s = old_feedrate;
@@ -2892,6 +2910,7 @@ void kill_screen(const char* lcd_msg) {
               max = soft_endstop_max[Z_AXIS];
             #endif
             break;
+          default: break;
         }
       #endif // MIN_SOFTWARE_ENDSTOPS || MAX_SOFTWARE_ENDSTOPS
 
@@ -3317,18 +3336,22 @@ void kill_screen(const char* lcd_msg) {
     //
     #if FAN_COUNT > 0
       #if HAS_FAN0
-        #if FAN_COUNT > 1
-          #define MSG_1ST_FAN_SPEED MSG_FAN_SPEED " 1"
-        #else
-          #define MSG_1ST_FAN_SPEED MSG_FAN_SPEED
+        MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_FAN_SPEED FAN_SPEED_1_SUFFIX, &fanSpeeds[0], 0, 255);
+        #if ENABLED(EXTRA_FAN_SPEED)
+          MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_EXTRA_FAN_SPEED FAN_SPEED_1_SUFFIX, &new_fanSpeeds[0], 3, 255);
         #endif
-        MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_1ST_FAN_SPEED, &fanSpeeds[0], 0, 255);
       #endif
       #if HAS_FAN1
         MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_FAN_SPEED " 2", &fanSpeeds[1], 0, 255);
+        #if ENABLED(EXTRA_FAN_SPEED)
+          MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_EXTRA_FAN_SPEED " 2", &new_fanSpeeds[1], 3, 255);
+        #endif
       #endif
       #if HAS_FAN2
         MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_FAN_SPEED " 3", &fanSpeeds[2], 0, 255);
+        #if ENABLED(EXTRA_FAN_SPEED)
+          MENU_MULTIPLIER_ITEM_EDIT(int3, MSG_EXTRA_FAN_SPEED " 3", &new_fanSpeeds[2], 3, 255);
+        #endif
       #endif
     #endif // FAN_COUNT > 0
 
@@ -3704,6 +3727,9 @@ void kill_screen(const char* lcd_msg) {
         MENU_ITEM_EDIT(float52, MSG_CONTROL_RETRACT_RECOVER_SWAP, &swap_retract_recover_length, -100, 100);
       #endif
       MENU_ITEM_EDIT(float3, MSG_CONTROL_RETRACT_RECOVERF, &retract_recover_feedrate_mm_s, 1, 999);
+      #if EXTRUDERS > 1
+        MENU_ITEM_EDIT(float3, MSG_CONTROL_RETRACT_RECOVER_SWAPF, &swap_retract_recover_feedrate_mm_s, 1, 999);
+      #endif
       END_MENU();
     }
 
@@ -3730,9 +3756,36 @@ void kill_screen(const char* lcd_msg) {
      * "Print from SD" submenu
      *
      */
+
+    #if ENABLED(SD_REPRINT_LAST_SELECTED_FILE)
+      uint32_t last_sdfile_encoderPosition = 0xFFFF;
+
+      void lcd_reselect_last_file() {
+        if (last_sdfile_encoderPosition == 0xFFFF) return;
+        #if ENABLED(DOGLCD)
+          // Some of this is a hack to force the screen update to work.
+          // TODO: Fix the real issue that causes this!
+          lcdDrawUpdate = LCDVIEW_CALL_REDRAW_NEXT;
+          _lcd_synchronize();
+          safe_delay(50);
+          _lcd_synchronize();
+          lcdDrawUpdate = LCDVIEW_CALL_REDRAW_NEXT;
+          drawing_screen = screen_changed = true;
+        #endif
+
+        lcd_goto_screen(lcd_sdcard_menu, last_sdfile_encoderPosition);
+        defer_return_to_status = true;
+        last_sdfile_encoderPosition = 0xFFFF;
+
+        #if ENABLED(DOGLCD)
+          lcd_update();
+        #endif
+      }
+    #endif
+
     void lcd_sdcard_menu() {
       ENCODER_DIRECTION_MENUS();
-      if (!lcdDrawUpdate && !lcd_clicked) return; // nothing to do (so don't thrash the SD card)
+
       const uint16_t fileCnt = card.getnrfilenames();
       START_MENU();
       MENU_BACK(MSG_MAIN);
@@ -4381,6 +4434,9 @@ void kill_screen(const char* lcd_msg) {
   #if ENABLED(SDSUPPORT)
 
     void menu_action_sdfile(const char* filename, char* longFilename) {
+      #if ENABLED(SD_REPRINT_LAST_SELECTED_FILE)
+        last_sdfile_encoderPosition = encoderPosition;  // Save which file was selected for later use
+      #endif
       UNUSED(longFilename);
       card.openAndPrintFile(filename);
       lcd_return_to_status();
@@ -4658,7 +4714,6 @@ void lcd_update() {
 
     // We arrive here every ~100ms when idling often enough.
     // Instead of tracking the changes simply redraw the Info Screen ~1 time a second.
-    static int8_t lcd_status_update_delay = 1; // first update one loop delayed
     if (
       #if ENABLED(ULTIPANEL)
         currentScreen == lcd_status_screen &&
@@ -4674,15 +4729,27 @@ void lcd_update() {
       lcdDrawUpdate = LCDVIEW_REDRAW_NOW;
     }
 
+    #if ENABLED(SCROLL_LONG_FILENAMES)
+      // If scrolling of long file names is enabled and we are in the sd card menu,
+      // cause a refresh to occur until all the text has scrolled into view.
+      if (currentScreen == lcd_sdcard_menu && filename_scroll_pos < filename_scroll_max && !lcd_status_update_delay--) {
+        lcd_status_update_delay = 6;
+        lcdDrawUpdate = LCDVIEW_REDRAW_NOW;
+        filename_scroll_pos++;
+        return_to_status_ms = ms + LCD_TIMEOUT_TO_STATUS;
+      }
+    #endif
+
     // then we want to use 1/2 of the time only.
     uint16_t bbr2 = planner.block_buffer_runtime() >> 1;
 
     #if ENABLED(DOGLCD)
-      if ((lcdDrawUpdate || drawing_screen) && (!bbr2 || (bbr2 > max_display_update_time)))
+      #define IS_DRAWING drawing_screen
     #else
-      if (lcdDrawUpdate && (!bbr2 || (bbr2 > max_display_update_time)))
+      #define IS_DRAWING false
     #endif
-    {
+
+    if ((lcdDrawUpdate || IS_DRAWING) && (!bbr2 || bbr2 > max_display_update_time)) {
       #if ENABLED(DOGLCD)
         if (!drawing_screen)
       #endif
@@ -4758,7 +4825,7 @@ void lcd_update() {
   } // ELAPSED(ms, next_lcd_update_ms)
 }
 
-void pad_message_string() {
+inline void pad_message_string() {
   uint8_t i = 0, j = 0;
   char c;
   while ((c = lcd_status_message[i]) && j < LCD_WIDTH) {

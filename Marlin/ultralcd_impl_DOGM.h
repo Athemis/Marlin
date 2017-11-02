@@ -277,6 +277,8 @@ void lcd_printPGM_utf(const char *str, uint8_t n=LCD_WIDTH) {
 
 #if ENABLED(SHOW_BOOTSCREEN)
 
+  bool show_bootscreen = true;
+
   #if ENABLED(SHOW_CUSTOM_BOOTSCREEN)
 
     void lcd_custom_bootscreen() {
@@ -292,8 +294,6 @@ void lcd_printPGM_utf(const char *str, uint8_t n=LCD_WIDTH) {
   #endif // SHOW_CUSTOM_BOOTSCREEN
 
   void lcd_bootscreen() {
-
-    static bool show_bootscreen = true;
 
     if (show_bootscreen) {
       show_bootscreen = false;
@@ -352,11 +352,13 @@ static void lcd_implementation_init() {
   #endif
 
   #if ENABLED(SHOW_BOOTSCREEN)
-    #if ENABLED(SHOW_CUSTOM_BOOTSCREEN)
-      lcd_custom_bootscreen();
-    #else
-      lcd_bootscreen();
-    #endif
+    if (show_bootscreen) {
+      #if ENABLED(SHOW_CUSTOM_BOOTSCREEN)
+        lcd_custom_bootscreen();
+      #else
+        lcd_bootscreen();
+      #endif
+    }
   #endif
 }
 
@@ -934,19 +936,36 @@ static void lcd_implementation_status_screen() {
 
       if (!PAGE_CONTAINS(row_y1, row_y2)) return;
 
-      uint8_t n = LCD_WIDTH - (START_COL) - 1;
+      constexpr uint8_t maxlen = LCD_WIDTH - (START_COL) - 1;
+      const char *outstr = longFilename[0] ? longFilename : filename;
       if (longFilename[0]) {
-        filename = longFilename;
-        longFilename[n] = '\0'; // cutoff at screen edge
+        #if ENABLED(SCROLL_LONG_FILENAMES)
+          if (isSelected) {
+            uint8_t name_hash = row;
+            for (uint8_t l = FILENAME_LENGTH; l--;)
+              name_hash = ((name_hash << 1) | (name_hash >> 7)) ^ filename[l];  // rotate, xor
+            if (filename_scroll_hash != name_hash) {                            // If the hash changed...
+              filename_scroll_hash = name_hash;                                 // Save the new hash
+              filename_scroll_max = max(0, lcd_strlen(longFilename) - maxlen);  // Update the scroll limit
+              filename_scroll_pos = 0;                                          // Reset scroll to the start
+              lcd_status_update_delay = 8;                                      // Don't scroll right away
+            }
+            outstr += filename_scroll_pos;
+          }
+        #else
+          longFilename[maxlen] = '\0'; // cutoff at screen edge
+        #endif
       }
 
       if (isDir) lcd_print(LCD_STR_FOLDER[0]);
 
-      while (char c = *filename) {
+      char c;
+      uint8_t n = maxlen;
+      while (n && (c = *outstr)) {
         n -= lcd_print_and_count(c);
-        filename++;
+        ++outstr;
       }
-      while (n--) u8g.print(' ');
+      while (n) { --n; u8g.print(' '); }
     }
 
     #define lcd_implementation_drawmenu_sdfile(sel, row, pstr, filename, longFilename) _drawmenu_sd(sel, row, pstr, filename, longFilename, false)
